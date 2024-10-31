@@ -2,7 +2,7 @@ package network
 
 import (
 	"testing"
-	"github.com/stretchr/testify/assert" // // go get github.com/stretchr/testify
+	"github.com/stretchr/testify/assert" // go get github.com/stretchr/testify
 )
 
 func TestConnect(t *testing.T) {
