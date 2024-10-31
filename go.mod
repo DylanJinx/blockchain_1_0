@@ -1,3 +1,4 @@
+// go mod init github.com/DylanJinx/blockchain_1_0
 module github.com/DylanJinx/blockchain_1_0
 
 go 1.22.6
