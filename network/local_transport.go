@@ -15,7 +15,7 @@ type LocalTransport struct {
 	peers 	  map[NetAddr]*LocalTransport  // 记录和哪些节点建立了连接
 }
 
-func NewLocalTransport(addr NetAddr) *LocalTransport {
+func NewLocalTransport(addr NetAddr) Transport {
 	return &LocalTransport{
 		addr     : addr,
 		consumeCh: make(chan RPC, 1024),
@@ -29,11 +29,11 @@ func (t *LocalTransport) Consume() <-chan RPC {
 }
 
 // Connect 连接到另一个 LocalTransport。
-func (t *LocalTransport) Connect(tr *LocalTransport) error {
+func (t *LocalTransport) Connect(tr Transport) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	t.peers[tr.Addr()] = tr
+	t.peers[tr.Addr()] = tr.(*LocalTransport)
 
 	return nil // 这里我们不需要做任何事情，因为我们只是在本地传输中连接到对等方
 }
