@@ -1,4 +1,4 @@
-# `local_transport.go` 和 `local_transport_test.go`代码前后对比
+# 一、`local_transport.go` 和 `local_transport_test.go`代码前后对比
 
 `local_transport.go`:
 
@@ -194,7 +194,7 @@ func TestSendMessage(t *testing.T) {
 }
 ```
 
-## 一、前后代码对比
+## 1. 前后代码对比
 
 ### **之前的版本**
 
@@ -228,9 +228,9 @@ func NewLocalTransport(addr NetAddr) Transport {
 
 ---
 
-## 二、为什么要这样改？
+## 2. 为什么要这样改？
 
-### 1. 面向接口编程的需要
+### 1） 面向接口编程的需要
 
 - **老版本**：`NewLocalTransport(addr) *LocalTransport`  
   返回的是一个具体的结构体指针。这意味着所有使用者都能直接拿到 `LocalTransport` 的实现细节，比如 `peers` 字段等。
@@ -242,7 +242,7 @@ func NewLocalTransport(addr NetAddr) Transport {
 
 - 将来如果你要扩展一个 `TCPTransport` 或者 `UDPTransport`，都能同样实现 `Transport` 接口，然后也能返回 `Transport`。上层只用 `Transport` 就够了，不用每次都回到 `*LocalTransport`。
 
-### 2. 解耦、可扩展
+### 2） 解耦、可扩展
 
 - 现在上层代码（比如 `server.go` 或者某些初始化逻辑）只需要写：
   ```go
@@ -253,7 +253,7 @@ func NewLocalTransport(addr NetAddr) Transport {
 
 ---
 
-## 三、为什么测试文件要做 `tr.(*LocalTransport)` 的类型断言？
+## 3、为什么测试文件要做 `tr.(*LocalTransport)` 的类型断言？
 
 **新版本**的测试里，你会看到：
 
@@ -299,7 +299,7 @@ func (t *LocalTransport) Addr() NetAddr {
 - 这跟手动做类型断言（`tr.(*LocalTransport)`) 不一样。后者是真的在代码层面显式地“把接口变量转回到具体类型”之后，你才能访问到 `LocalTransport` 特有的字段（比如 `peers`）。
 - 而 `tr.Addr()` 之所以能工作，是因为 `Transport` 接口中声明了 `Addr()` 方法，所以 Go 编译器知道：“只要满足 `Transport` 接口的具体类型，都一定有 `Addr()` 这个方法。” 这个调用是通过 **接口的动态分发** 完成的，而不是把 `Transport` “改成” `LocalTransport`。
 
-# `range channel`为什么可以实现
+# 二、`range channel`为什么可以实现
 
 在 Go 语言中，`range` 可以用来遍历「可迭代」的对象，比如数组、切片、映射（map），**也**可以用来从「通道（channel）」中**持续读取**元素，直到通道被关闭或循环被打断。
 
@@ -353,7 +353,7 @@ func main() {
 - `producer` 不断往通道里发送数据，然后 `close(ch)`。
 - `main` 中 `for val := range ch` 就可以一条一条地把数据取出来。
 
-# 多个传输层写法：`Transport: []network.Transport{trLocal, tcpTransport, ...}`
+# 三、多个传输层写法：`Transport: []network.Transport{trLocal, tcpTransport, ...}`
 
 **简短回答**：  
 完全可以这么写，只要你的 `tcpTransport` 也实现了 `Transport` 接口，就可以和 `trLocal` 一起被放进同一个切片 `[]network.Transport{...}` 里。然后 `Server` 会把它们都初始化、都消费消息，实现多种传输方式的并存。
