@@ -352,3 +352,111 @@ func main() {
 
 - `producer` 不断往通道里发送数据，然后 `close(ch)`。
 - `main` 中 `for val := range ch` 就可以一条一条地把数据取出来。
+
+# 多个传输层写法：`Transport: []network.Transport{trLocal, tcpTransport, ...}`
+
+**简短回答**：  
+完全可以这么写，只要你的 `tcpTransport` 也实现了 `Transport` 接口，就可以和 `trLocal` 一起被放进同一个切片 `[]network.Transport{...}` 里。然后 `Server` 会把它们都初始化、都消费消息，实现多种传输方式的并存。
+
+---
+
+## 为什么可以这样做？
+
+1. **`Transports` 是一个切片 (slice)**  
+   在这段代码里：
+
+   ```go
+   opts := network.ServerOpts{
+       Transports: []network.Transport{trLocal},
+   }
+   ```
+
+   只是示例写法，表示：**我们给 `ServerOpts` 赋值的 `Transports` 字段，是一个 `[]network.Transport` 切片，里面只有 `trLocal` 这一个元素**。
+
+2. **可以往切片里添加多个实现同一接口的元素**
+
+   - 如果你实现了另一个传输层，比如 `tcpTransport`，并且它同样满足 `Transport` 接口定义的方法：
+     ```go
+     type Transport interface {
+         Consume() <-chan RPC
+         Connect(Transport) error
+         SendMessage(NetAddr, []byte) error
+         Addr() NetAddr
+     }
+     ```
+     那么它和 `trLocal` 在类型上是“同一级别”的东西——都属于 `Transport` 接口的实现。
+   - 于是你可以把它们都放到 `Transports` 切片里，比如：
+     ```go
+     opts := network.ServerOpts{
+         Transports: []network.Transport{trLocal, tcpTransport},
+     }
+     ```
+
+3. **`Server` 会同时管理这些 Transport**  
+   在 `server.go` 中，`initTransports()` 会遍历这个切片里的所有 Transport，用 goroutine 去 “range tr.Consume()”，把消息发送到统一的 `rpcCh`。也就是说，**无论消息来自哪个 Transport**，最终都能被 `Server` 的 `select { case rpc := <-s.rpcCh: ... }` 读到。
+
+---
+
+## 代码示例（伪代码）
+
+假设你真的实现了一个新的 `TCPTransport`，像下面这样（伪代码）：
+
+```go
+type TCPTransport struct {
+    // 一些字段，比如 listener, connections, etc.
+    // ...
+}
+
+func NewTCPTransport(addr NetAddr) Transport {
+    return &TCPTransport{ /* ... */ }
+}
+
+func (t *TCPTransport) Consume() <-chan RPC {
+    // 返回一个只读通道
+    // ...
+}
+
+func (t *TCPTransport) Connect(other Transport) error {
+    // 真正建立 TCP 连接的逻辑
+    // ...
+}
+
+func (t *TCPTransport) SendMessage(to NetAddr, payload []byte) error {
+    // 通过 TCP 连接把消息发出去
+    // ...
+}
+
+func (t *TCPTransport) Addr() NetAddr {
+    // 返回自己的地址
+    // ...
+}
+```
+
+然后在你的 `main.go` 里，你完全可以写成：
+
+```go
+func main() {
+    trLocal := network.NewLocalTransport("LOCAL")
+    tcpTransport := network.NewTCPTransport("127.0.0.1:9000")
+
+    opts := network.ServerOpts{
+        // 同时加本地 Transport 和 TCP Transport
+        Transports: []network.Transport{trLocal, tcpTransport},
+    }
+    s := network.NewServer(opts)
+    s.Start()
+}
+```
+
+这样 `Server` 就能处理来自两个不同传输层的消息了。
+
+---
+
+## 总结
+
+- “在上面代码中只写了 `Transports: []network.Transport{trLocal}`，是不是就不能加别的？”  
+  **并不是**。这只是示例。如果你还有别的满足 `Transport` 接口的实现，都可以往这个切片里放。
+- Go 的多态是通过接口来实现的。只要实现了相同的接口，就能被视作同一种“类型”在高层使用（这里指的就是 `Transport`）。
+- 服务器 (`Server`) 会遍历整个 `Transports` 切片，逐一启动监听，因此**可以在同一个节点中使用多个不同的传输层**。
+
+**所以**，你所说的「我们是不是就不能再这样写了」其实恰恰相反，**我们正是可以这样做**。只要多种传输都实现了 `Transport` 接口，就能通过这个切片一并交给 `Server` 来使用。
